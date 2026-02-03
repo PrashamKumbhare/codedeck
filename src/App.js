@@ -35,19 +35,15 @@ int main() {
 
   html: `<!DOCTYPE html>
 <html>
-<head>
-  <title>Cloud Editor</title>
-</head>
+<head><title>Cloud Editor</title></head>
 <body>
   <h1>Hello HTML 👋</h1>
-  <p>Live preview opened in new tab</p>
 </body>
 </html>`,
 
   css: `body {
   background: #020617;
   color: white;
-  font-family: Arial;
 }`
 };
 
@@ -55,6 +51,7 @@ const STORAGE_KEY = "cloud_code_editor_state";
 
 function App() {
   const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+  const isMobile = window.innerWidth <= 768;
 
   const [language, setLanguage] = useState(saved?.language || "python");
   const [files, setFiles] = useState(
@@ -63,10 +60,10 @@ function App() {
   const [output, setOutput] = useState("// Ready");
   const [isRunning, setIsRunning] = useState(false);
   const [editorWidth, setEditorWidth] = useState(saved?.editorWidth || 65);
+  const [activeTab, setActiveTab] = useState("code");
 
   const containerRef = useRef(null);
   const isDragging = useRef(false);
-
   const activeFile = files[0];
 
   /* ================= Persist ================= */
@@ -78,31 +75,7 @@ function App() {
     );
   }, [language, files, editorWidth]);
 
-  /* ================= Keyboard Shortcuts ================= */
-
-  useEffect(() => {
-    const handler = (e) => {
-      if (e.ctrlKey && e.key === "Enter") {
-        e.preventDefault();
-        handleRunOrPreview();
-      }
-
-      if (e.ctrlKey && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        downloadFile();
-      }
-
-      if (e.ctrlKey && e.key.toLowerCase() === "r") {
-        e.preventDefault();
-        resetWorkspace();
-      }
-    };
-
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  });
-
-  /* ================= Run / Preview ================= */
+  /* ================= Run ================= */
 
   const runCode = () => {
     const resultMap = {
@@ -115,24 +88,21 @@ function App() {
 
     setIsRunning(true);
     setOutput(`$ running ${language} code...\n\n${resultMap[language]}`);
+    setActiveTab("output");
     setTimeout(() => setIsRunning(false), 600);
-  };
-
-  const openPreviewInNewTab = () => {
-    const w = window.open();
-    w.document.write(activeFile.code);
-    w.document.close();
   };
 
   const handleRunOrPreview = () => {
     if (language === "html" || language === "css") {
-      openPreviewInNewTab();
+      const w = window.open();
+      w.document.write(activeFile.code);
+      w.document.close();
     } else {
       runCode();
     }
   };
 
-  /* ================= Language Change ================= */
+  /* ================= Language ================= */
 
   const changeLanguage = (lang) => {
     const extMap = {
@@ -146,23 +116,14 @@ function App() {
     };
 
     setLanguage(lang);
-    setFiles([
-      {
-        id: 1,
-        name: `main.${extMap[lang]}`,
-        code: templates[lang]
-      }
-    ]);
+    setFiles([{ id: 1, name: `main.${extMap[lang]}`, code: templates[lang] }]);
     setOutput("// Ready");
+    setActiveTab("code");
   };
-
-  /* ================= Update Code ================= */
 
   const updateCode = (value) => {
     setFiles([{ ...activeFile, code: value }]);
   };
-
-  /* ================= Download ================= */
 
   const downloadFile = () => {
     const blob = new Blob([activeFile.code], { type: "text/plain" });
@@ -174,37 +135,41 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
-  /* ================= Reset ================= */
-
   const resetWorkspace = () => {
     localStorage.removeItem(STORAGE_KEY);
     setLanguage("python");
     setFiles([{ id: 1, name: "main.py", code: templates.python }]);
     setOutput("// Ready");
     setEditorWidth(65);
+    setActiveTab("code");
   };
 
   /* ================= Resize ================= */
 
-  const onMouseDown = () => (isDragging.current = true);
-  const onMouseUp = () => (isDragging.current = false);
+  const onMouseDown = () => {
+    if (isMobile) return;
+    isDragging.current = true;
+  };
 
   const onMouseMove = (e) => {
-    if (!isDragging.current) return;
+    if (isMobile || !isDragging.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     const newWidth = ((e.clientX - rect.left) / rect.width) * 100;
     if (newWidth > 30 && newWidth < 80) setEditorWidth(newWidth);
   };
 
+  const onMouseUp = () => (isDragging.current = false);
+
   return (
     <div className="app" onMouseMove={onMouseMove} onMouseUp={onMouseUp}>
+      {/* ===== Top Bar ===== */}
       <div className="topbar">
         <div className="brand">
-  <img src={logo} alt="CodeDeck logo" className="brand-logo" />
-  <span className="brand-text">CodeDeck</span>
-</div>
+          <img src={logo} alt="logo" className="brand-logo" />
+          <span className="brand-text">CodeDeck</span>
+        </div>
 
-        <div style={{ display: "flex", gap: "12px" }}>
+        <div className="topbar-right">
           <select
             className="lang-select"
             value={language}
@@ -219,43 +184,87 @@ function App() {
             <option value="css">CSS</option>
           </select>
 
-          <button className="run-btn" onClick={handleRunOrPreview}>
-            {language === "html" || language === "css" ? "Preview" : "Run"}
-          </button>
-
+          <button className="run-btn" onClick={handleRunOrPreview}>Run</button>
           <button className="run-btn" onClick={downloadFile}>Download</button>
           <button className="run-btn" onClick={resetWorkspace}>Reset</button>
+
+          <div className="mobile-actions">
+            <button onClick={handleRunOrPreview}>▶</button>
+            <button onClick={downloadFile}>⬇</button>
+            <button onClick={resetWorkspace}>⟳</button>
+          </div>
         </div>
       </div>
 
+      {/* ===== Mobile Tabs ===== */}
+      {isMobile && (
+        <div className="mobile-tabs">
+          <button
+            className={activeTab === "code" ? "active" : ""}
+            onClick={() => setActiveTab("code")}
+          >
+            Code
+          </button>
+          <button
+            className={activeTab === "output" ? "active" : ""}
+            onClick={() => setActiveTab("output")}
+          >
+            Output
+          </button>
+        </div>
+      )}
+
+      {/* ===== Main ===== */}
       <div className="main" ref={containerRef}>
-        <div className="editor-area" style={{ width: `${editorWidth}%` }}>
-          <Editor
-            height="100%"
-            language={language}
-            theme="vs-dark"
-            value={activeFile.code}
-            onChange={updateCode}
-            options={{ fontSize: 14, minimap: { enabled: false } }}
-          />
-        </div>
+        {(!isMobile || activeTab === "code") && (
+          <div className="editor-area">
+            <Editor
+              height="100%"
+              language={language}
+              value={activeFile.code}
+              beforeMount={(monaco) => {
+                monaco.editor.defineTheme("codedeck-dark", {
+                  base: "vs-dark",
+                  inherit: true,
+                  rules: [],
+                  colors: {
+                    "editor.background": "#020617",
+                    "editorGutter.background": "#020617",
+                    "editorLineNumber.foreground": "#475569",
+                    "editorCursor.foreground": "#e5e7eb",
+                  }
+                });
+              }}
+              onMount={(editor, monaco) => {
+                monaco.editor.setTheme("codedeck-dark");
+              }}
+              onChange={updateCode}
+              options={{
+                fontSize: 14,
+                minimap: { enabled: false },
+                scrollBeyondLastLine: false,
+              }}
+            />
+          </div>
+        )}
 
-        <div style={{ width: "6px", cursor: "col-resize" }} onMouseDown={onMouseDown} />
+        {!isMobile && <div className="resize-bar" onMouseDown={onMouseDown} />}
 
-        <div className="output-area" style={{ width: `${100 - editorWidth}%` }}>
-          <pre>{output}</pre>
-        </div>
+        {(!isMobile || activeTab === "output") && (
+          <div
+            className="output-area"
+            style={!isMobile ? { width: `${100 - editorWidth}%` } : {}}
+          >
+            <pre>{output}</pre>
+          </div>
+        )}
       </div>
 
-      {/* ===== Status Bar ===== */}
-      <div className="status-bar">
-        <div>
-          {isRunning ? "Running…" : "Ready"} • {language}
+      {!isMobile && (
+        <div className="status-bar">
+          <div>{isRunning ? "Running…" : "Ready"} • {language}</div>
         </div>
-        <div className="shortcuts">
-          Ctrl+Enter • Run | Ctrl+S • Download | Ctrl+R • Reset
-        </div>
-      </div>
+      )}
     </div>
   );
 }
