@@ -204,3 +204,9 @@ body {
     gap: 10px;
   }
 }
+
+@media (max-width: 768px) {
+  .topbar {
+    gap: 6px;
+  }
+}
