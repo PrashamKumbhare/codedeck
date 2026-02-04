@@ -1,51 +1,77 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 import subprocess
 import tempfile
 import os
 
-app = FastAPI()
-
-# Allow frontend (React) to talk to backend
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-class CodeRequest(BaseModel):
-    code: str
+app = Flask(__name__)
+CORS(app)
 
 
-@app.post("/run")
-def run_code(data: CodeRequest):
-    # Create a temporary python file
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".py") as temp:
-        temp.write(data.code.encode("utf-8"))
-        temp_path = temp.name
+@app.route("/run", methods=["POST"])
+def run_code():
+    data = request.json
+
+    language = data.get("language")
+    code = data.get("code")
+
+    if not language or not code:
+        return jsonify({"output": "Error: No code or language provided"}), 400
+
 
     try:
-        # Run the python file
-        result = subprocess.run(
-            ["python", temp_path],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
+        with tempfile.TemporaryDirectory() as temp_dir:
 
-        output = result.stdout
-        error = result.stderr
+            if language == "python":
+                file_path = os.path.join(temp_dir, "main.py")
 
-        if error:
-            return {"output": error}
+                with open(file_path, "w") as f:
+                    f.write(code)
 
-        return {"output": output if output else "Program ran with no output"}
+                result = subprocess.run(
+                    ["py", file_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+
+
+            elif language == "javascript":
+                file_path = os.path.join(temp_dir, "main.js")
+
+                with open(file_path, "w") as f:
+                    f.write(code)
+
+                result = subprocess.run(
+                    ["node", file_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+
+
+            else:
+                return jsonify({
+                    "output": "This language is not supported yet."
+                })
+
+
+            output = result.stdout + result.stderr
+
+            if output.strip() == "":
+                output = "No output"
+
+
+            return jsonify({"output": output})
+
+
+    except subprocess.TimeoutExpired:
+        return jsonify({"output": "Error: Code took too long to run (timeout)"})
+
 
     except Exception as e:
-        return {"output": str(e)}
+        return jsonify({"output": f"Server Error: {str(e)}"})
 
-    finally:
-        os.remove(temp_path)
+
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)
